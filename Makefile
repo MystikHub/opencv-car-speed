@@ -3,6 +3,6 @@ debug:
 		-lm\
 		-lstdc++\
 		`pkg-config --libs --cflags opencv4`\
-		-g -o application
-	./application "filename"
-	rm ./application
+		-g -o vehicle-speed
+	./vehicle-speed "filename"
+	rm ./vehicle-speed

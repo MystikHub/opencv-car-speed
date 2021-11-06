@@ -8,7 +8,7 @@ using namespace std;
 int main(int argc, char** argv) {
     // Make sure a single argument has been given
     if(argc != 2) {
-        printf("usage: SpoonInspection.out <path-to-image-directory>\n");
+        printf("usage: vehicle-speed.out <path-to-image-directory>\n");
         return -1;
     }
 
