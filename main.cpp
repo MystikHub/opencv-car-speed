@@ -153,7 +153,7 @@ int main(int argc, char** argv) {
             imshow("License plate location", licensePlateImage);
 
             printf("Frame number: %d\n", frameNumber++);
-            printf("Largest rectangularity found: %f at (%d, %d)\n", sizeOfLargestRectangularity, licensePlateBoundingRectange.x, licensePlateBoundingRectange.y);
+            printf("Largest rectangularity found: %f at (%d, %d)\n", sizeOfLargestRectangularity, licensePlateBoundingRectangle.x, licensePlateBoundingRectangle.y);
         }
     }
 
