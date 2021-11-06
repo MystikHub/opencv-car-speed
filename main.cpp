@@ -17,6 +17,7 @@ double VIDEO_FRAMERATE = 29.97;
 #define PLATE_HEIGHT_IN_MM 100
 #define FRAMES_PER_SECOND 29.97
 #define REQUIRED_DICE 0.8
+#define MAX_PREDICTION_DELTA 200
 const int LICENCE_PLATE_LOCATIONS[][5] = { {1, 67, 88, 26, 6}, {2, 67, 88, 26, 6}, {3, 68, 88, 26, 6},
 	{4, 69, 88, 26, 6}, {5, 70, 89, 26, 6}, {6, 70, 89, 27, 6}, {7, 71, 89, 27, 6}, {8, 73, 89, 27, 6},
 	{9, 73, 90, 27, 6}, {10, 74, 90, 27, 6}, {11, 75, 90, 27, 6}, {12, 76, 90, 27, 6}, {13, 77, 91, 27, 6},
@@ -58,6 +59,15 @@ const int FRAMES_FOR_DISTANCES[] = { 54,   70,   86,  101,  115,  129,  143,  15
 const int DISTANCES_TRAVELLED_IN_MM[] = { 2380, 2380, 2400, 2380, 2395, 2380, 2385, 2380 };
 const double SPEEDS_IN_KMPH[] = { 16.0, 16.0, 17.3, 18.3, 18.5, 18.3, 17.2, 18.3 };
 
+double distance(Point a, Point b) {
+    // Pythagora's theorem, a^2 + b^2 = c^2
+    // c, a.k.a. distance = sqrt(x_dist^2 + y_dist^2)
+    double x_distance = pow(b.x - a.x, 2);
+    double y_distance = pow(b.y - a.y, 2);
+    double distance = sqrt(x_distance + y_distance);
+    return distance;
+}
+
 int main(int argc, char** argv) {
     VideoCapture carVideo("data/CarSpeedTest1.mp4");
     Mat staticBackground = imread("data/CarSpeedTest1EmptyFrame.jpg", 1);
@@ -69,6 +79,7 @@ int main(int argc, char** argv) {
     namedWindow("License plate location");
     bool videoFinished = false;
     int frameNumber = 1;
+    Rect previouslyFoundLocation = Rect(LICENCE_PLATE_LOCATIONS[0][1], LICENCE_PLATE_LOCATIONS[0][2], LICENCE_PLATE_LOCATIONS[0][3], LICENCE_PLATE_LOCATIONS[0][4]);
     while(!videoFinished) {
         Mat current_frame;
         carVideo >> current_frame;
@@ -120,7 +131,7 @@ int main(int argc, char** argv) {
             // Find the license plate
             vector<vector<Point>> contours;
             Mat licensePlateImage = current_frame;
-            Rect licensePlateBoundingRectange;
+            Rect licensePlateBoundingRectangle;
             findContours(unlocatedLicensePlate, contours, RETR_LIST, CHAIN_APPROX_NONE);
             int indexOfContourWithLargestRectangularity = -1;
             double sizeOfLargestRectangularity = 0;
@@ -128,14 +139,16 @@ int main(int argc, char** argv) {
                 Rect boundingRectangle = boundingRect(contours[i]);
                 double rectangularity = contourArea(contours[i]) / ((boundingRectangle.width) * (boundingRectangle.height));
                 if(rectangularity > sizeOfLargestRectangularity
-                        && boundingRectangle.width > boundingRectangle.height) {
+                        && distance(previouslyFoundLocation.tl(), boundingRectangle.tl()) < MAX_PREDICTION_DELTA) {
                     sizeOfLargestRectangularity = rectangularity;
                     indexOfContourWithLargestRectangularity = i;
                 }
             }
+            // Save this license plate location and draw a rectangle of it
             if(contours.size() && indexOfContourWithLargestRectangularity != -1) {
-                licensePlateBoundingRectange = boundingRect(contours[indexOfContourWithLargestRectangularity]);
-                rectangle(licensePlateImage, licensePlateBoundingRectange, Scalar(255, 0, 0));
+                licensePlateBoundingRectangle = boundingRect(contours[indexOfContourWithLargestRectangularity]);
+                rectangle(licensePlateImage, licensePlateBoundingRectangle, Scalar(255, 0, 0));
+                previouslyFoundLocation = Rect(licensePlateBoundingRectangle);
             }
             imshow("License plate location", licensePlateImage);
 
