@@ -70,9 +70,37 @@ double distance(Point a, Point b) {
 
 vector<double> distances;
 void printFinalMetrics() {
-    //calculate
-    //print
-    //clear
+    // Calculate
+    double distancesBetween[7] = {0, 0, 0, 0, 0, 0, 0};
+    for(size_t i = 0; i < distances.size(); i++) {
+        int frameNumber = i + 1;
+        int binIndex = -1;
+        // Find which bin this frame goes in (index for distancesBetween)
+        bool foundBin = false;
+        for(int j = 0; j < 7 && !foundBin; j++) {
+            if(frameNumber >= FRAMES_FOR_DISTANCES[j] && frameNumber < FRAMES_FOR_DISTANCES[j + 1]) {
+                foundBin = true;
+                binIndex = j;
+            }
+        }
+
+        if(binIndex != -1) {
+            double distanceDelta = distances[frameNumber] - distances[frameNumber - 1];
+            // Negative delta because the car is approaching the camera
+            distancesBetween[binIndex] += -(distanceDelta); 
+        }
+    }
+    // Print
+    printf("Distances and speeds between frames\n");
+    for(int i = 0; i < 7; i++) {
+        printf("%d and %d: %.3fmm", FRAMES_FOR_DISTANCES[i], FRAMES_FOR_DISTANCES[i + 1], distancesBetween[i]);
+        double speedInMPerSecond = (distancesBetween[i] / (double) 1000) / (((double) (FRAMES_FOR_DISTANCES[i + 1] - FRAMES_FOR_DISTANCES[i])) / (double) FRAMES_PER_SECOND);
+        double speedInKmPerHour = speedInMPerSecond * (double) 3.6;
+        printf(" average %.3fkm/h\n", speedInKmPerHour);
+    }
+    printf("\n");
+    // Clear
+    distances.clear();
 }
 
 int main(int argc, char** argv) {
@@ -190,9 +218,9 @@ int main(int argc, char** argv) {
                 previousSpeed = speed;
 
             // Save this distance for final metrics
-            distances.push_back(fullDistance);
+            distances.push_back(fullDistance * 1000);
 
-            double printableSpeed = abs(speed * ((double) 1000 / ((double) 60 * (double) 60)));
+            double printableSpeed = abs(speed * 3.6);
             printf("Frame number: %d, distance: %.3fm, speed: %.3f km/h\n", frameNumber++, fullDistance, printableSpeed);
         }
     }
