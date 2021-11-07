@@ -17,7 +17,7 @@ double VIDEO_FRAMERATE = 29.97;
 #define PLATE_HEIGHT_IN_MM 100
 #define FRAMES_PER_SECOND 29.97
 #define REQUIRED_DICE 0.8
-#define MAX_PREDICTION_DELTA 200
+#define MAX_PREDICTION_DELTA 100
 const int LICENCE_PLATE_LOCATIONS[][5] = { {1, 67, 88, 26, 6}, {2, 67, 88, 26, 6}, {3, 68, 88, 26, 6},
 	{4, 69, 88, 26, 6}, {5, 70, 89, 26, 6}, {6, 70, 89, 27, 6}, {7, 71, 89, 27, 6}, {8, 73, 89, 27, 6},
 	{9, 73, 90, 27, 6}, {10, 74, 90, 27, 6}, {11, 75, 90, 27, 6}, {12, 76, 90, 27, 6}, {13, 77, 91, 27, 6},
@@ -68,6 +68,13 @@ double distance(Point a, Point b) {
     return distance;
 }
 
+vector<double> distances;
+void printFinalMetrics() {
+    //calculate
+    //print
+    //clear
+}
+
 int main(int argc, char** argv) {
     VideoCapture carVideo("data/CarSpeedTest1.mp4");
     Mat staticBackground = imread("data/CarSpeedTest1EmptyFrame.jpg", 1);
@@ -79,11 +86,12 @@ int main(int argc, char** argv) {
     namedWindow("License plate location");
     bool videoFinished = false;
     int frameNumber = 1;
-    Rect previouslyFoundLocation = Rect(LICENCE_PLATE_LOCATIONS[0][1], LICENCE_PLATE_LOCATIONS[0][2], LICENCE_PLATE_LOCATIONS[0][3], LICENCE_PLATE_LOCATIONS[0][4]);
+    Rect previouslyFoundLocation = Rect(0, 0, 0, 0);
+    double previousDistance = 0, previousSpeed = 0;
+    Mat current_frame;
+    carVideo >> current_frame;
     while(!videoFinished) {
-        Mat current_frame;
         carVideo >> current_frame;
-
         // Ground truth rectangle
         const int* thisLocationData = LICENCE_PLATE_LOCATIONS[frameNumber - 1];
         Rect rect(thisLocationData[1], thisLocationData[2], thisLocationData[3], thisLocationData[4]);
@@ -98,6 +106,8 @@ int main(int argc, char** argv) {
             carVideo = VideoCapture("data/CarSpeedTest1.mp4");
             carVideo >> current_frame;
             frameNumber = 1;
+
+            printFinalMetrics();
         } else {
             rectangle(current_frame, rect, Scalar(0, 0, 255));
             imshow("Car video", current_frame);
@@ -138,8 +148,8 @@ int main(int argc, char** argv) {
             for(size_t i = 0; i < contours.size(); i++) {
                 Rect boundingRectangle = boundingRect(contours[i]);
                 double rectangularity = contourArea(contours[i]) / ((boundingRectangle.width) * (boundingRectangle.height));
-                if(rectangularity > sizeOfLargestRectangularity
-                        && distance(previouslyFoundLocation.tl(), boundingRectangle.tl()) < MAX_PREDICTION_DELTA) {
+                if(rectangularity > sizeOfLargestRectangularity) {
+                        // && distance(previouslyFoundLocation.tl(), boundingRectangle.tl()) < MAX_PREDICTION_DELTA) {
                     sizeOfLargestRectangularity = rectangularity;
                     indexOfContourWithLargestRectangularity = i;
                 }
@@ -151,9 +161,39 @@ int main(int argc, char** argv) {
                 previouslyFoundLocation = Rect(licensePlateBoundingRectangle);
             }
             imshow("License plate location", licensePlateImage);
+            
+            // Calculate the distance to the object
+            // For any point of the license plate (I'll use the top left) in the x and y axes:
+            // screen width/height (pixels) / focal length (pixels) = real width/height (mm) / distance to license plate (x/y, mm)
+            // i.e. distance to license plate(x/y, mm) = real width/height (mm) * focal length (pixels) / screen width/height (pixels)
+            //
+            // First, need to rescale our bounding box to match the aspect ratio of the real license plate
+            double licensePlateAspectRatio = (double) PLATE_WIDTH_IN_MM / (double) PLATE_HEIGHT_IN_MM;
+            double estimateAspectRatio = (double) licensePlateBoundingRectangle.width / (double) licensePlateBoundingRectangle.height;
+            licensePlateBoundingRectangle.width *= licensePlateAspectRatio / estimateAspectRatio;
 
-            printf("Frame number: %d\n", frameNumber++);
-            printf("Largest rectangularity found: %f at (%d, %d)\n", sizeOfLargestRectangularity, licensePlateBoundingRectangle.x, licensePlateBoundingRectangle.y);
+            double xDistance = ((double) PLATE_WIDTH_IN_MM * (double) FOCAL_LENGTH_ESTIMATE) / (double) licensePlateBoundingRectangle.width;
+            double yDistance = ((double) PLATE_HEIGHT_IN_MM * (double) FOCAL_LENGTH_ESTIMATE) / (double) licensePlateBoundingRectangle.height;
+            double fullDistance = distance(Point(0, 0), Point(xDistance, yDistance)) / 1000;    // Divide by 1000 to convert millimeters to meters
+
+            // Calculate the speed
+            // speed = distance / time
+            double distanceDelta = fullDistance - previousDistance;
+            double speed = distanceDelta / ((double) 1 / (double) VIDEO_FRAMERATE);
+            previousDistance = fullDistance;
+            // Sometimes, the distance calculation between frames might result
+            // in the same distance, so use the previous speed to come up with a
+            // non-zero answer
+            if(speed == 0)
+                speed = previousSpeed;
+            else
+                previousSpeed = speed;
+
+            // Save this distance for final metrics
+            distances.push_back(fullDistance);
+
+            double printableSpeed = abs(speed * ((double) 1000 / ((double) 60 * (double) 60)));
+            printf("Frame number: %d, distance: %.3fm, speed: %.3f km/h\n", frameNumber++, fullDistance, printableSpeed);
         }
     }
 
