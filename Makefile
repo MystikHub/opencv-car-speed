@@ -7,6 +7,8 @@ debug:
 	./vehicle-speed "filename"
 	rm ./vehicle-speed
 
+# Same as above without running the program
+# Useful for debugging in VS Code
 build:
 	gcc main.cpp\
 		-lm\

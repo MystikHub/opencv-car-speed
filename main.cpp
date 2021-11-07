@@ -17,6 +17,7 @@ using namespace cv;
 #define FRAMES_PER_SECOND 29.97
 #define REQUIRED_DICE 0.8
 #define MAX_PREDICTION_DELTA 100
+#define SUPPRESS_FRAME_INFO
 const int LICENCE_PLATE_LOCATIONS[][5] = { {1, 67, 88, 26, 6}, {2, 67, 88, 26, 6}, {3, 68, 88, 26, 6},
 	{4, 69, 88, 26, 6}, {5, 70, 89, 26, 6}, {6, 70, 89, 27, 6}, {7, 71, 89, 27, 6}, {8, 73, 89, 27, 6},
 	{9, 73, 90, 27, 6}, {10, 74, 90, 27, 6}, {11, 75, 90, 27, 6}, {12, 76, 90, 27, 6}, {13, 77, 91, 27, 6},
@@ -73,7 +74,7 @@ vector<Rect> estimateBBs;
 void printFinalMetrics() {
     // Calculate the distances between each pair of points defined in
     //  FRAMES_FOR_DISTANCES
-    double distancesBetween[7] = {0, 0, 0, 0, 0, 0, 0};
+    double distancesBetween[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
     for(size_t i = 0; i < distances.size(); i++) {
         // Start processing from distances index 1 to be able to calculate
@@ -83,7 +84,7 @@ void printFinalMetrics() {
 
         // Find which bin this frame goes in (index for distancesBetween)
         bool foundBin = false;
-        for(int j = 0; j < 7 && !foundBin; j++) {
+        for(int j = 0; j < 8 && !foundBin; j++) {
             if(frameNumber >= FRAMES_FOR_DISTANCES[j] && frameNumber < FRAMES_FOR_DISTANCES[j + 1]) {
                 foundBin = true;
                 binIndex = j;
@@ -104,8 +105,9 @@ void printFinalMetrics() {
     //  (speeds as well!)
     printf("Distances and speeds between frames\n");
 
-    for(int i = 0; i < 7; i++) {
-        printf("%d and %d: %.3fmm", FRAMES_FOR_DISTANCES[i], FRAMES_FOR_DISTANCES[i + 1], distancesBetween[i]);
+    for(int i = 0; i < 8; i++) {
+        double differenceFromGroundTruth = abs(distancesBetween[i] - DISTANCES_TRAVELLED_IN_MM[i]);
+        printf("%d and %d: %.3fmm (diff of %.3f)", FRAMES_FOR_DISTANCES[i], FRAMES_FOR_DISTANCES[i + 1], distancesBetween[i], differenceFromGroundTruth);
 
         // Calculate the speed from the distance between each of the ground
         //  truths using the data from the previous loop and the time difference
@@ -116,14 +118,20 @@ void printFinalMetrics() {
         double speedInMPerSecond = distanceTravelled / timeElapsed;
         double speedInKmPerHour = speedInMPerSecond * (double) 3.6;
 
-        printf(" average %.3fkm/h\n", speedInKmPerHour);
+        differenceFromGroundTruth = abs(speedInKmPerHour - SPEEDS_IN_KMPH[i]);
+        printf("\taverage %.3fkm/h (diff of %.3f)\n", speedInKmPerHour, differenceFromGroundTruth);
     }
     printf("\n");
 
     // Find DICE coefficient metrics;
+    int truePositives = 0;
+    int falsePositives = 0; // Frames where there wasn't a license plate and
+                            //  we predicted there was a license plate
+    int falseNegatives = 0; // Frames where there was a license plate and we 
+                            //  didn't have a good enough dice coefficient
     for(size_t i = 0; i < distances.size(); i++) {
         // Ground truth rectangle
-        const int* gtDimensions = LICENCE_PLATE_LOCATIONS[i + 1];
+        const int* gtDimensions = LICENCE_PLATE_LOCATIONS[i];
         Rect groundTruthRectangle = Rect(gtDimensions[1], gtDimensions[2], gtDimensions[3], gtDimensions[4]);
         Rect intersectionRectangle = estimateBBs[i] & groundTruthRectangle;
 
@@ -131,14 +139,35 @@ void printFinalMetrics() {
         double sumOfAreas = groundTruthRectangle.area() + estimateBBs[i].area();
 
         double diceCoefficient = ((double) 2 * intersectionArea) / sumOfAreas;
-        printf("DICE coefficient for frame %d: %.4f\n", (int) i + 1, diceCoefficient);
+
+        // If we have ground truth data for these frames
+        if(i < NUMBER_OF_PLATES) {
+            if(diceCoefficient >= 0.8) {
+                truePositives++;
+            } else {
+                falseNegatives++;
+            }
+        // We made predictions, but there was no ground truth
+        } else {
+            // My system always has predictions, even for frames without a
+            //  license plate, so all of those predictions are false positives
+            falsePositives++;
+        }
     }
+
+    printf("True positives: %d\n", truePositives);
+    printf("False positives: %d\n", falsePositives);
+    printf("False negatives: %d\n\n", falseNegatives);
+
+    // Calculate precision and recall
+    double precision = (double) (truePositives) / ((double) truePositives + falsePositives);
+    double recall = (double) (truePositives) / (double) (truePositives + falseNegatives);
+    printf("Precision: %.3f%%\n", precision * 100);
+    printf("Recall: %.3f%%\n", recall * 100);
 
     // Clear our vector of saved distances for the next loop through the video
     distances.clear();
-    distances.push_back(0);
     estimateBBs.clear();
-    estimateBBs.push_back(Rect(0, 0, 0, 0));
 }
 
 int main(int argc, char** argv) {
@@ -163,10 +192,6 @@ int main(int argc, char** argv) {
     // Load the first frame (but do nothing with it, ground truth is offset by one)
     Mat current_frame;
     carVideo >> current_frame;
-
-    // Set metrics lists with a blank value for the first ignored frame
-    distances.push_back(0);
-    estimateBBs.push_back(Rect(0, 0, 0, 0));
 
     // Process each frame of the video until the user presses ESC
     while(!videoFinished) {
@@ -311,7 +336,10 @@ int main(int argc, char** argv) {
 
             // Print the frame number, distance, and speed to stdout
             double printableSpeed = abs(speed * 3.6);
-            printf("Frame number: %d, distance: %.3fm, speed: %.3f km/h\n", frameNumber++, fullDistance, printableSpeed);
+#ifndef SUPPRESS_FRAME_INFO
+            printf("Frame number: %d, distance: %.3fm, speed: %.3f km/h\n", frameNumber, fullDistance, printableSpeed);
+#endif
+            frameNumber++;
         }
     }
 
